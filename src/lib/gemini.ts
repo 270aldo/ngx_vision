@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { InsightsResultZ, type InsightsResult } from "@/types/ai";
+import { VisionAnalysisResultZ, type VisionAnalysisResult } from "@/types/video";
 
 async function fetchImageAsInlineData(url: string): Promise<{ mimeType: string; data: string }> {
   const res = await fetch(url);
@@ -8,6 +9,173 @@ async function fetchImageAsInlineData(url: string): Promise<{ mimeType: string; 
   const arrayBuffer = await res.arrayBuffer();
   const data = Buffer.from(arrayBuffer).toString("base64");
   return { mimeType, data };
+}
+
+/**
+ * Vision Analysis Prompt for VEO Video Generation
+ * Generates user_visual_anchor, hero_narrative, and veo_prompt
+ */
+const VISION_ANALYSIS_PROMPT = `
+You are an ELITE CINEMATIC DIRECTOR and HIGH-PERFORMANCE COACH creating a transformation video.
+
+Your task is to analyze the provided photo and profile data to generate the foundation for a powerful 8-second cinematic transformation video.
+
+ANALYZE THE PHOTO AND PROFILE TO GENERATE:
+
+1. **user_visual_anchor**: A detailed, IMMUTABLE description of the person's physical appearance:
+   - Facial structure: face shape, eye color/shape, eyebrows, nose, lips, jaw
+   - Skin: tone, texture, any visible marks or features
+   - Hair: color, style, length, texture
+   - Any distinguishing features: facial hair, glasses, piercings, etc.
+   This description will be used to PRESERVE their identity across video frames.
+   Be extremely specific and detailed. This is critical for maintaining consistency.
+
+2. **hero_narrative**: A 2-3 sentence inspiring narrative about THIS SPECIFIC person's transformation journey.
+   - Written in second person ("You are...")
+   - Stoic, clinical, yet deeply motivational tone
+   - Reference their specific goals and obstacles
+   - Make them feel like the protagonist of their own epic story
+
+3. **veo_prompt**: A complete, production-ready prompt for VEO 3.1 video generation that will create an 8-second cinematic transformation video showing this person as the hero of their journey.
+
+   Structure the veo_prompt with these sections:
+
+   [IDENTITY LOCK]
+   - Include the user_visual_anchor
+   - Emphasize preserving exact features throughout
+
+   [SEQUENCE - 8 SECONDS]
+   - 0-2s: Opening close-up, eyes opening with determination
+   - 2-6s: Training montage focused on their goal and focus zone
+   - 6-8s: Triumphant final pose, confident smile
+
+   [STYLE]
+   - Nike commercial aesthetic
+   - Golden hour + electric violet (#6D00FF) lighting
+   - Smooth camera movements
+   - Photorealistic quality
+
+   [AUDIO]
+   - Epic orchestral/electronic build
+   - Heartbeat sync
+   - Triumphant swell
+
+   [CONSTRAINTS]
+   - Single subject only
+   - No text overlays
+   - 9:16 vertical format
+   - Photorealistic (no CGI)
+
+OUTPUT FORMAT (JSON only, no markdown):
+{
+  "user_visual_anchor": "Detailed physical description...",
+  "hero_narrative": "Your inspiring narrative...",
+  "veo_prompt": "Complete VEO prompt with all sections...",
+  "estimated_transformation": {
+    "physical": "Expected physical changes based on goals",
+    "mental": "Expected mental/emotional growth"
+  }
+}
+
+TONE REQUIREMENTS:
+- Clinical yet inspiring
+- Personalized to THEIR specific situation
+- Reference their stress/sleep/discipline data for authenticity
+- Make them feel seen and understood
+- The narrative should give them chills
+
+CRITICAL:
+- Output ONLY valid JSON, no markdown code blocks
+- Be extremely specific in the visual anchor - vague descriptions will fail
+- The veo_prompt must be self-contained and production-ready
+`;
+
+/**
+ * Generate Vision Analysis for VEO Video Generation
+ * Creates user_visual_anchor, hero_narrative, and veo_prompt
+ */
+export async function generateVisionAnalysis(params: {
+  imageUrl: string;
+  profile: {
+    age?: string | number;
+    sex?: string;
+    height?: string | number;
+    heightCm?: number;
+    weight?: string | number;
+    weightKg?: number;
+    goals?: string;
+    goal?: string;
+    level?: string;
+    weeklyTime?: string | number;
+    stressLevel?: number;
+    sleepQuality?: number;
+    disciplineRating?: number;
+    bodyType?: string;
+    focusZone?: string;
+    notes?: string;
+  };
+}): Promise<VisionAnalysisResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
+
+  const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash-preview-05-20";
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: modelName });
+
+  const { mimeType, data } = await fetchImageAsInlineData(params.imageUrl);
+  const { profile } = params;
+
+  // Handle both field naming conventions
+  const height = profile.height ?? profile.heightCm;
+  const weight = profile.weight ?? profile.weightKg;
+  const goals = profile.goals ?? profile.goal;
+
+  const userContext = `
+USER PROFILE DATA:
+- Age: ${profile.age}
+- Sex: ${profile.sex}
+- Height: ${height}cm
+- Weight: ${weight}kg
+- Body Type: ${profile.bodyType || "Not specified"}
+- Current Level: ${profile.level || "Novato"}
+- Main Goal: ${goals || "General fitness"}
+- Weekly Dedication: ${profile.weeklyTime || 3} hours
+- Focus Zone: ${profile.focusZone?.toUpperCase() || "FULL BODY"}
+
+MENTAL STATE:
+- Stress Level: ${profile.stressLevel || 5}/10
+- Sleep Quality: ${profile.sleepQuality || 5}/10
+- Discipline Rating: ${profile.disciplineRating || 5}/10
+
+ADDITIONAL NOTES:
+${profile.notes || "None provided"}
+`;
+
+  console.log("[Gemini] Generating Vision Analysis...");
+
+  const result = await model.generateContent([
+    { text: VISION_ANALYSIS_PROMPT },
+    { text: userContext },
+    { inlineData: { mimeType, data } },
+  ]);
+
+  let text = result.response.text().trim();
+
+  // Strip code fences if present
+  if (text.startsWith("```")) {
+    text = text.replace(/^```[a-zA-Z]*\n?/, "").replace(/\n?```$/, "");
+  }
+
+  console.log("[Gemini] Raw response:", text.substring(0, 200) + "...");
+
+  const parsed = VisionAnalysisResultZ.safeParse(JSON.parse(text));
+  if (!parsed.success) {
+    console.error("[Gemini] Validation failed:", parsed.error.message);
+    throw new Error("Vision analysis validation failed: " + parsed.error.message);
+  }
+
+  console.log("[Gemini] Vision Analysis complete");
+  return parsed.data;
 }
 
 export async function generateInsightsFromImage(params: {
