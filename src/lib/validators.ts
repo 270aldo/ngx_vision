@@ -42,3 +42,11 @@ export const GenerateImagesSchema = z.object({
     .default(["m4", "m8", "m12"]).optional(),
 });
 
+export const GenerateVideoSchema = z.object({
+  sessionId: z.string(),
+  durationSeconds: z.union([z.literal(4), z.literal(6), z.literal(8)])
+    .default(8).optional(),
+  resolution: z.enum(["720p", "1080p"]).default("1080p").optional(),
+  aspectRatio: z.enum(["16:9", "9:16"]).default("9:16").optional(),
+});
+

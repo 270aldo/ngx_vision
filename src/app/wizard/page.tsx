@@ -47,7 +47,7 @@ export default function WizardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stage, setStage] = useState<"idle" | "lead" | "upload" | "create" | "analyze" | "images" | "done">("idle");
+  const [stage, setStage] = useState<"idle" | "lead" | "upload" | "create" | "analyze" | "video" | "done">("idle");
   const [progress, setProgress] = useState(0);
   const { addToast } = useToast();
   const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "1";
@@ -110,7 +110,7 @@ export default function WizardPage() {
         setStage("upload"); setProgress(36); await new Promise(r => setTimeout(r, 500));
         setStage("create"); setProgress(58); await new Promise(r => setTimeout(r, 450));
         setStage("analyze"); setProgress(79); await new Promise(r => setTimeout(r, 650));
-        setStage("images"); setProgress(90); await new Promise(r => setTimeout(r, 350));
+        setStage("video"); setProgress(90); await new Promise(r => setTimeout(r, 350));
         setStage("done"); setProgress(100);
         router.push("/demo/result");
         return;
@@ -174,16 +174,16 @@ export default function WizardPage() {
       const analyzeJson = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeJson.error || "Error al analizar la imagen");
 
-      // 5) Images (async)
-      setStage("images"); setProgress(85);
-      fetch("/api/generate-images", {
+      // 5) Video generation (async - fires and redirects immediately)
+      setStage("video"); setProgress(85);
+      fetch("/api/generate-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
       }).catch(() => { });
 
       setStage("done"); setProgress(100);
-      router.push(`/s/${sessionId}`);
+      router.push(`/v/${sessionId}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error inesperado";
       setError(message);
@@ -203,8 +203,8 @@ export default function WizardPage() {
       <div className="max-w-[1400px] mx-auto p-6">
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold">Generar resultados</h1>
-            <p className="text-neutral-400">Sube tu foto, completa tus datos y visualiza la proyección 0/4/8/12 meses.</p>
+            <h1 className="text-2xl font-semibold">NGX Vision</h1>
+            <p className="text-neutral-400">Sube tu foto, completa tus datos y genera tu video cinematográfico de transformación.</p>
           </div>
           {DEMO && (
             <span className="px-3 py-1 rounded bg-[#6D00FF]/20 text-[#B98CFF] border border-[#6D00FF]/30 text-xs">Modo demo</span>
@@ -459,9 +459,9 @@ export default function WizardPage() {
                       {stage === "lead" && "INICIANDO PROTOCOLO..."}
                       {stage === "upload" && "DIGITALIZANDO BIOMETRÍA..."}
                       {stage === "create" && "ESTRUCTURANDO SESIÓN..."}
-                      {stage === "analyze" && "ANALIZANDO VECTORES..."}
-                      {stage === "images" && "RENDERIZANDO FUTURO..."}
-                      {stage === "done" && "TRANSFORMACIÓN COMPLETA."}
+                      {stage === "analyze" && "COMPONIENDO NARRATIVA..."}
+                      {stage === "video" && "PREPARANDO VIDEO CINEMATOGRÁFICO..."}
+                      {stage === "done" && "VISIÓN COMPLETA."}
                     </span>
                   </div>
                   <Progress value={progress} className="h-1" />
@@ -469,7 +469,7 @@ export default function WizardPage() {
               )}
 
               <Button disabled={loading} className="w-full max-w-2xl h-14 text-lg bg-[#6D00FF] hover:bg-[#5b00d6] text-white font-bold tracking-[0.2em] shadow-[0_0_30px_rgba(109,0,255,0.4)] transition-all hover:scale-[1.01]">
-                {loading ? "PROCESANDO..." : (DEMO ? "VER DEMO" : "INICIAR TRANSFORMACIÓN")}
+                {loading ? "PROCESANDO..." : (DEMO ? "VER DEMO" : "GENERAR MI VIDEO")}
               </Button>
               <p className="text-[10px] text-neutral-600 text-center uppercase tracking-widest">Datos encriptados. Uso exclusivo de NGX.</p>
             </div>

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/firebaseAdmin";
 import { AnalyzeSchema } from "@/lib/validators";
 import { getSignedUrl } from "@/lib/storage";
-import { generateInsightsFromImage } from "@/lib/gemini";
+import { generateVisionAnalysis } from "@/lib/gemini";
 import { FieldValue } from "firebase-admin/firestore";
 
 interface SessionDoc {
@@ -16,12 +16,17 @@ interface SessionDoc {
     level: "novato" | "intermedio" | "avanzado";
     goal: "definicion" | "masa" | "mixto";
     weeklyTime: number;
+    stressLevel?: number;
+    sleepQuality?: number;
+    disciplineRating?: number;
+    bodyType?: string;
+    focusZone?: string;
     notes?: string;
   };
   photo?: { originalStoragePath?: string };
-  ai?: unknown;
-  assets?: { images?: Record<string, string> };
-  status: "processing" | "analyzed" | "generating" | "ready" | "failed";
+  analysis?: unknown;
+  video?: { storagePath: string };
+  status: "pending" | "analyzed" | "generating" | "ready" | "error";
 }
 
 export async function POST(req: Request) {
@@ -37,7 +42,7 @@ export async function POST(req: Request) {
     parsedSessionId = sessionId;
 
     if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: "GEMINI_API_KEY no está configurado" }, { status: 400 });
+      return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 400 });
     }
 
     const db = getDb();
@@ -54,14 +59,19 @@ export async function POST(req: Request) {
 
     const imageUrl = await getSignedUrl(photoPath, { expiresInSeconds: 3600 });
 
-    const ai = await generateInsightsFromImage({
+    console.log("[analyze] Starting vision analysis for session:", sessionId);
+
+    // Generate Vision Analysis (for VEO video generation)
+    const analysis = await generateVisionAnalysis({
       imageUrl,
       profile: data.input,
     });
 
+    console.log("[analyze] Vision analysis complete, hero_narrative:", analysis.hero_narrative.substring(0, 100) + "...");
+
     await ref.set(
       {
-        ai,
+        analysis,
         status: "analyzed",
         analyzedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -69,13 +79,26 @@ export async function POST(req: Request) {
       { merge: true }
     );
 
-    return NextResponse.json({ ok: true, ai });
+    return NextResponse.json({
+      ok: true,
+      analysis: {
+        hero_narrative: analysis.hero_narrative,
+        estimated_transformation: analysis.estimated_transformation,
+      },
+    });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";
-    console.error(e);
+    console.error("[analyze] Error:", e);
     try {
       if (parsedSessionId) {
-        await getDb().collection("sessions").doc(parsedSessionId).set({ status: "failed" }, { merge: true });
+        await getDb().collection("sessions").doc(parsedSessionId).set(
+          {
+            status: "error",
+            errorMessage: message,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
       }
     } catch {}
     return NextResponse.json({ error: message }, { status: 500 });
